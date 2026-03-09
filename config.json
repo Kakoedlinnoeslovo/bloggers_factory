@@ -1,0 +1,19 @@
+{
+  "models": {
+    "Andrea": {
+      "bloggers": ["beccaxbloom"],
+      "ref_images_dir": "ai_models/Andrea"
+    },
+    "Mikki": {
+      "bloggers": ["iamgorgeousdoll", "realcamillaara"],
+      "ref_images_dir": "ai_models/Mikki"
+    },
+    "Natalie": {
+      "bloggers": ["victoria_repa", "beccaxbloom", "itscassidypayne"],
+      "ref_images_dir": "ai_models/Natalie"
+    }
+  },
+  "carousel_size": 5,
+  "aspect_ratio": "4:5",
+  "output_dir": "output"
+}
