@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Bloggers Factory - AI Instagram Carousel Generator.
+Bloggers Factory - AI Instagram Carousel & Reel-to-Video Generator.
 
 Unified CLI that replaces generate_posts.py, generate_bulk_posts.py,
 and generate_bulk_parallel.py.
@@ -12,6 +12,9 @@ Usage:
     python generate.py --status                                   # show progress
     python generate.py --reset --model Andrea                     # reset one model
     python generate.py --reset                                    # reset all
+    python generate.py --reel --model Andrea                      # single reel-to-video
+    python generate.py --reel --bulk --min-reels 10               # bulk reels, all models
+    python generate.py --reel --bulk --parallel --workers 4       # bulk reels, parallel
 """
 
 import argparse
@@ -27,16 +30,31 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-from lib.utils import setup_logging
+from lib.utils import setup_logging, download_file
 from lib.state import State, RefCache
-from lib.instagram import fetch_all_blogger_posts, cache_posts, load_cached_posts
+from lib.instagram import (
+    fetch_all_blogger_posts,
+    fetch_blogger_reels,
+    cache_posts,
+    load_cached_posts,
+    cache_reels,
+    load_cached_reels,
+)
 from lib.prompts import generate_prompts
 from lib.image_gen import (
     ensure_fal_key,
     get_reference_image_urls,
     generate_carousel_images,
+    _generate_single_image,
     download_images,
     save_metadata,
+)
+from lib.video_utils import download_reel, extract_frames
+from lib.reel_gen import (
+    generate_scene_prompt,
+    analyze_motion_with_vision,
+    generate_kling_video,
+    save_reel_metadata,
 )
 
 logger = logging.getLogger("bloggers_factory")
@@ -214,6 +232,256 @@ def generate_for_model(
 
 
 # ---------------------------------------------------------------------------
+# Reel-to-video mode
+# ---------------------------------------------------------------------------
+
+def _load_master_prompt(path: str = "reel_master_prompt.json") -> str:
+    with open(path) as f:
+        data = json.load(f)
+    return data["master_prompt"]
+
+
+def run_reel(
+    model_name: str,
+    config: dict,
+    args: argparse.Namespace,
+    reel_data: dict | None = None,
+    shared_ref_cache: RefCache | None = None,
+) -> bool:
+    """Generate a Kling video inspired by a blogger's reel.
+
+    Returns True on success, False on failure.
+    When *reel_data* is supplied (keys: video_url, code, like_count) the reel
+    is used directly instead of fetching from Instagram or --reel-source.
+    """
+    ensure_fal_key()
+    ref_cache = shared_ref_cache or RefCache()
+
+    model_cfg = config["models"][model_name]
+    blogger = random.choice(model_cfg["bloggers"])
+    ref_dir = model_cfg["ref_images_dir"]
+    output_base = Path(model_cfg.get("output_dir", config.get("output_dir", "output")))
+    aspect_ratio = "9:16"
+    duration = args.duration
+    vision_model = args.vision_model
+
+    logger.info("=" * 60)
+    logger.info("REEL-TO-VIDEO | Model: %s | Blogger: @%s", model_name, blogger)
+    logger.info("=" * 60)
+
+    # --- 1. Resolve reel source ---
+    reel_source: str | None = None
+    reel_code = ""
+
+    if reel_data:
+        reel_source = reel_data["video_url"]
+        reel_code = reel_data.get("code", "")
+        logger.info("Using pre-fetched reel (code=%s)", reel_code)
+    else:
+        reel_source = getattr(args, "reel_source", None)
+
+    tag = datetime.now().strftime("%Y-%m-%d") + "_" + str(random.randint(1, 1_000_000))
+    output_dir = output_base / model_name / f"reel_{tag}"
+    intermediate_dir = output_dir / "intermediate_data"
+    intermediate_dir.mkdir(parents=True, exist_ok=True)
+
+    if reel_source:
+        logger.info("Using reel source: %s", reel_source)
+    else:
+        logger.info("Fetching reels for @%s...", blogger)
+        reels = fetch_blogger_reels(blogger, max_pages=1)
+        if not reels:
+            logger.error("No reels found for @%s", blogger)
+            return False
+        reel = random.choice(reels[:5] if len(reels) >= 5 else reels)
+        reel_source = reel["video_url"]
+        reel_code = reel["code"]
+        logger.info("Picked reel (code=%s, likes=%d)", reel_code, reel.get("like_count", 0))
+
+    # --- 2. Download reel ---
+    video_path = download_reel(reel_source, intermediate_dir)
+    logger.info("Reel downloaded: %s", video_path)
+
+    # --- 3. Extract frames ---
+    frames = extract_frames(video_path, num_frames=3, output_dir=intermediate_dir)
+    if not frames:
+        logger.error("No frames extracted, aborting.")
+        return False
+    logger.info("Extracted %d frames", len(frames))
+
+    # --- 4. Generate scene prompt from first frame ---
+    scene_prompt = generate_scene_prompt(frames[0])
+    if not scene_prompt:
+        logger.error("Failed to generate scene prompt, aborting.")
+        return False
+    logger.info("Scene prompt: %s", scene_prompt[:120])
+
+    # --- 5. Generate Nano Banana image (identity-preserving scene recreation) ---
+    ref_urls = get_reference_image_urls(model_name, ref_dir, ref_cache)
+    logger.info("Generating Nano Banana image (scene recreation + identity)...")
+    _, nb_result = _generate_single_image(0, scene_prompt, ref_urls, aspect_ratio, model_name)
+    nb_images = nb_result.get("images", [])
+    if not nb_images:
+        logger.error("Nano Banana returned no image, aborting.")
+        return False
+
+    nb_image_url = nb_images[0]["url"]
+    nb_dest = intermediate_dir / "generated_image.png"
+    download_file(nb_image_url, nb_dest)
+    logger.info("Nano Banana image saved: %s", nb_dest)
+
+    # --- 6. Vision-based motion analysis ---
+    master_prompt = _load_master_prompt()
+    logger.info("Running vision analysis with %s...", vision_model)
+    vision_result = analyze_motion_with_vision(frames, master_prompt, vision_model)
+    if not vision_result:
+        logger.error("Vision analysis failed, aborting.")
+        return False
+    logger.info("Kling prompt: %s", vision_result.get("kling_prompt", "")[:120])
+
+    # --- 7. Generate Kling video ---
+    kling_prompt = vision_result.get("kling_prompt", "")
+    negative_prompt = vision_result.get("negative_prompt", "")
+    if not kling_prompt:
+        logger.error("Vision analysis produced no kling_prompt, aborting.")
+        return False
+
+    kling_result = generate_kling_video(
+        image_url=nb_image_url,
+        prompt=kling_prompt,
+        negative_prompt=negative_prompt,
+        duration=duration,
+        aspect_ratio=aspect_ratio,
+    )
+    if not kling_result:
+        logger.error("Kling video generation failed, aborting.")
+        return False
+
+    # --- 8. Download output video ---
+    video_url = kling_result.get("video", {}).get("url", "")
+    if not video_url:
+        logger.error("Kling returned no video URL.")
+        return False
+
+    video_filename = f"{reel_code}.mp4" if reel_code else "output_video.mp4"
+    video_dest = output_dir / video_filename
+    if not download_file(video_url, video_dest, timeout=120):
+        logger.error("Failed to download output video.")
+        return False
+    logger.info("Output video saved: %s", video_dest)
+
+    # --- 9. Save metadata ---
+    generated_files = [video_dest.name, nb_dest.name] + [f.name for f in frames]
+    save_reel_metadata(
+        output_dir=intermediate_dir,
+        model_name=model_name,
+        blogger=blogger,
+        reel_source=reel_source,
+        reel_code=reel_code,
+        scene_prompt=scene_prompt,
+        vision_result=vision_result,
+        generated_files=generated_files,
+        duration=duration,
+        vision_model=vision_model,
+    )
+
+    logger.info("=" * 60)
+    logger.info("REEL-TO-VIDEO COMPLETE -> %s", output_dir)
+    logger.info("=" * 60)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Bulk reel mode
+# ---------------------------------------------------------------------------
+
+def generate_reels_for_model(
+    model_name: str,
+    config: dict,
+    state: State,
+    ref_cache: RefCache,
+    target: int,
+    args: argparse.Namespace,
+):
+    """Generate up to *target* reels for one model, resumable."""
+    model_cfg = config["models"][model_name]
+    blogger = model_cfg["bloggers"][0]
+
+    ms = state.get_model(model_name)
+
+    logger.info("=" * 60)
+    logger.info("[%s] BULK REELS | Blogger: @%s | Done: %d/%d",
+                model_name, blogger, ms.get("completed_reels", 0), target)
+    logger.info("=" * 60)
+
+    if ms.get("completed_reels", 0) >= target:
+        logger.info("[%s] Already at reel target, skipping.", model_name)
+        return
+
+    reels = None
+    if ms.get("reels_cache_file"):
+        reels = load_cached_reels(ms["reels_cache_file"])
+
+    if not reels:
+        reels = fetch_blogger_reels(blogger)
+        if not reels:
+            logger.error("[%s] No reels for @%s, skipping.", model_name, blogger)
+            return
+        cache_file = cache_reels(model_name, reels)
+        state.update_and_save(model_name, reels_cache_file=cache_file)
+        ms = state.get_model(model_name)
+
+    completed_indices = set(ms.get("completed_reel_indices", []))
+    reel_count = ms.get("completed_reels", 0)
+    total_reels = len(reels)
+
+    logger.info("[%s] %d source reels | Starting reel #%d", model_name, total_reels, reel_count + 1)
+
+    cycle = 0
+    while reel_count < target:
+        cycle += 1
+        logger.info("[%s] CYCLE %d (%d more needed)", model_name, cycle, target - reel_count)
+
+        for reel_idx, reel in enumerate(reels):
+            if reel_count >= target:
+                break
+
+            composite_key = f"{cycle}_{reel_idx}"
+            if composite_key in completed_indices:
+                continue
+
+            reel_num = reel_count + 1
+            logger.info("[%s] Reel %d/%d | Cycle %d | Source reel %d/%d (code=%s)",
+                        model_name, reel_num, target, cycle, reel_idx + 1, total_reels,
+                        reel.get("code", ""))
+
+            try:
+                success = run_reel(
+                    model_name, config, args,
+                    reel_data=reel,
+                    shared_ref_cache=ref_cache,
+                )
+            except Exception:
+                logger.exception("[%s] run_reel failed for reel %d", model_name, reel_num)
+                success = False
+
+            if success:
+                reel_count += 1
+                logger.info("[%s] COMPLETED reel %d/%d", model_name, reel_count, target)
+            else:
+                logger.warning("[%s] Reel %d failed, continuing", model_name, reel_num)
+
+            completed_indices.add(composite_key)
+            state.update_and_save(
+                model_name,
+                completed_reels=reel_count,
+                completed_reel_indices=list(completed_indices),
+            )
+
+    logger.info("[%s] BULK REELS COMPLETED - %d reels", model_name, reel_count)
+
+
+# ---------------------------------------------------------------------------
 # Progress display
 # ---------------------------------------------------------------------------
 
@@ -241,23 +509,56 @@ def print_progress(state: State, config: dict, target: int):
     logger.info("=" * 70)
 
 
+def print_reel_progress(state: State, config: dict, target: int):
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("REEL PROGRESS SUMMARY")
+    logger.info("=" * 70)
+    logger.info("%-15s %-20s %10s %10s %8s", "Model", "Blogger", "Done", "Target", "Status")
+    logger.info("-" * 70)
+
+    total_done = total_target = 0
+    for model_name, model_cfg in config["models"].items():
+        ms = state.data.get(model_name, {})
+        done = ms.get("completed_reels", 0)
+        blogger = model_cfg["bloggers"][0]
+        status = "DONE" if done >= target else f"{done}/{target}"
+        logger.info("%-15s %-20s %10d %10d %8s", model_name, blogger, done, target, status)
+        total_done += done
+        total_target += target
+
+    logger.info("-" * 70)
+    logger.info("%-15s %-20s %10d %10d %8s", "TOTAL", "", total_done, total_target,
+                "DONE" if total_done >= total_target else f"{total_done}/{total_target}")
+    logger.info("=" * 70)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Bloggers Factory - AI Carousel Generator")
+    parser = argparse.ArgumentParser(description="Bloggers Factory - AI Carousel & Reel-to-Video Generator")
     parser.add_argument("--model", type=str, help="Run for a single model")
     parser.add_argument("--bulk", action="store_true", help="Bulk mode (multiple carousels with resume)")
     parser.add_argument("--parallel", action="store_true", help="Run models in parallel (bulk mode)")
     parser.add_argument("--workers", type=int, default=4, help="Parallel model workers (default: 4)")
     parser.add_argument("--min-carousels", type=int, default=DEFAULT_TARGET,
                         help=f"Target carousels per model (default: {DEFAULT_TARGET})")
+    parser.add_argument("--min-reels", type=int, default=10,
+                        help="Target reels per model in bulk reel mode (default: 10)")
     parser.add_argument("--config", type=str, default="config.json", help="Config file path")
     parser.add_argument("--verbose", action="store_true", help="Debug logging")
     parser.add_argument("--status", action="store_true", help="Show progress and exit")
     parser.add_argument("--reset", action="store_true", help="Reset state (use --model for single)")
     parser.add_argument("--cron", action="store_true", help="Run single carousel for all models")
+    parser.add_argument("--reel", action="store_true", help="Reel-to-video mode")
+    parser.add_argument("--reel-source", type=str, default=None,
+                        help="Direct reel path/URL (omit to fetch from blogger)")
+    parser.add_argument("--duration", type=int, default=5,
+                        help="Kling video duration in seconds (default: 5)")
+    parser.add_argument("--vision-model", type=str, default="google/gemini-2.5-flash",
+                        help="Vision model for motion analysis (default: google/gemini-2.5-flash)")
     args = parser.parse_args()
 
     setup_logging(verbose=args.verbose, parallel=args.parallel)
@@ -285,6 +586,59 @@ def main():
         return
 
     ensure_fal_key()
+
+    # --- Reel-to-video mode ---
+    if args.reel:
+        if args.bulk:
+            reel_target = args.min_reels
+            models_to_run = [args.model] if args.model else list(config["models"].keys())
+            ref_cache = RefCache()
+
+            logger.info("Bulk Reel Generator | Models: %s | Target: %d/model | Parallel: %s",
+                        models_to_run, reel_target, args.parallel)
+            print_reel_progress(state, config, reel_target)
+
+            start_time = time.time()
+
+            if args.parallel:
+                num_workers = min(args.workers, len(models_to_run))
+                with ThreadPoolExecutor(max_workers=num_workers, thread_name_prefix="reel") as executor:
+                    futures = {
+                        executor.submit(
+                            generate_reels_for_model, name, config, state, ref_cache, reel_target, args
+                        ): name
+                        for name in models_to_run if name in config["models"]
+                    }
+                    for future in as_completed(futures):
+                        name = futures[future]
+                        try:
+                            future.result()
+                            logger.info("[%s] Reel worker finished", name)
+                        except Exception:
+                            logger.exception("[%s] Reel worker FAILED", name)
+            else:
+                for name in models_to_run:
+                    try:
+                        generate_reels_for_model(name, config, state, ref_cache, reel_target, args)
+                    except Exception:
+                        logger.exception("FATAL reel for %s - continuing", name)
+                    print_reel_progress(state, config, reel_target)
+
+            elapsed = time.time() - start_time
+            h, rem = divmod(elapsed, 3600)
+            m, s = divmod(rem, 60)
+
+            logger.info("")
+            logger.info("=" * 70)
+            logger.info("BULK REELS DONE | Time: %dh %dm %ds", h, m, s)
+            logger.info("=" * 70)
+            print_reel_progress(state, config, reel_target)
+            return
+
+        if not args.model:
+            parser.error("--model is required in single reel mode (or use --reel --bulk)")
+        run_reel(args.model, config, args)
+        return
 
     # --- Single mode (one carousel per model) ---
     if not args.bulk and not args.cron:

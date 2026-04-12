@@ -1,0 +1,3 @@
+{
+  "master_prompt": "Analyze this short-form video sequence. The goal is to create a new video where an AI-generated model performs similar movements, gestures, and poses in a similar environment. Focus on the subject's body motion, facial expressions, hand gestures, weight shifts, and any interaction with the environment. Describe the camera work including any pans, tilts, zooms, or tracking movements. Note the pacing and energy level of the sequence."
+}
