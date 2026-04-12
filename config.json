@@ -4,13 +4,83 @@
       "bloggers": ["beccaxbloom"],
       "ref_images_dir": "ai_models/Andrea"
     },
+    "Dobby": {
+      "bloggers": ["blacchyna"],
+      "ref_images_dir": "ai_models/Dobby"
+    },
+    "Harper": {
+      "bloggers": ["realcamillaara"],
+      "ref_images_dir": "ai_models/Harper"
+    },
+    "Maria": {
+      "bloggers": ["itscassidypayne"],
+      "ref_images_dir": "ai_models/Maria"
+    },
     "Mikki": {
-      "bloggers": ["iamgorgeousdoll", "realcamillaara"],
+      "bloggers": ["iamgorgeousdoll"],
       "ref_images_dir": "ai_models/Mikki"
     },
     "Natalie": {
-      "bloggers": ["victoria_repa", "beccaxbloom", "itscassidypayne"],
+      "bloggers": ["victoria_repa"],
       "ref_images_dir": "ai_models/Natalie"
+    },
+    "Redhair": {
+      "bloggers": ["aynura_aghayeva"],
+      "ref_images_dir": "ai_models/Redhair"
+    },
+    "Tracy": {
+      "bloggers": ["camabootie_"],
+      "ref_images_dir": "ai_models/Tracy"
+    },
+    "debra": {
+      "bloggers": ["lovenookie"],
+      "ref_images_dir": "ai_models/debra"
+    },
+    "gosia": {
+      "bloggers": ["sosowave"],
+      "ref_images_dir": "ai_models/gosia"
+    },
+    "hazel": {
+      "bloggers": ["courtneygrow"],
+      "ref_images_dir": "ai_models/hazel"
+    },
+    "lindsey": {
+      "bloggers": ["chasemarieee"],
+      "ref_images_dir": "ai_models/lindsey"
+    },
+    "luvia": {
+      "bloggers": ["linnealevoskin"],
+      "ref_images_dir": "ai_models/luvia"
+    },
+    "Bibi": {
+      "bloggers": ["kendalljenner"],
+      "ref_images_dir": "ai_models_batch_2/Bibi",
+      "output_dir": "output2"
+    },
+    "Milena": {
+      "bloggers": ["gabbriette"],
+      "ref_images_dir": "ai_models_batch_2/Milena",
+      "output_dir": "output2"
+    },
+    "Puma": {
+      "bloggers": ["rosiehw"],
+      "ref_images_dir": "ai_models_batch_2/Puma(female-blue-black-ink-skin)",
+      "output_dir": "output2"
+    },
+    "Rosee": {
+      "bloggers": ["laurensanchezbezos"],
+      "ref_images_dir": "ai_models_batch_2/Rosee",
+      "output_dir": "output2"
+    },
+    "amara": {
+      "bloggers": ["imaanhammam"],
+      "ref_images_dir": "ai_models_batch_2/amara(plus_size)",
+      "output_dir": "output2"
+    },
+    "nola": {
+      "bloggers": ["dianerrashid"],
+      "ref_images_dir": "ai_models_batch_2/nola(plus_size)",
+      "output_dir": "output2"
     }
   },
   "carousel_size": 5,
