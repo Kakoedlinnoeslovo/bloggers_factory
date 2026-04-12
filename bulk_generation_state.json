@@ -65,7 +65,11 @@
     ],
     "total_posts_fetched": 12,
     "posts_cache_file": "posts_cache/Andrea_posts.json",
-    "reels_cache_file": "posts_cache/Andrea_reels.json"
+    "reels_cache_file": "posts_cache/Andrea_reels.json",
+    "completed_reels": 1,
+    "completed_reel_indices": [
+      "1_0"
+    ]
   },
   "Dobby": {
     "completed_carousels": 60,
@@ -137,7 +141,11 @@
     ],
     "total_posts_fetched": 10,
     "posts_cache_file": "posts_cache/Dobby_posts.json",
-    "reels_cache_file": "posts_cache/Dobby_reels.json"
+    "reels_cache_file": "posts_cache/Dobby_reels.json",
+    "completed_reels": 1,
+    "completed_reel_indices": [
+      "1_0"
+    ]
   },
   "Harper": {
     "completed_carousels": 60,
@@ -206,7 +214,11 @@
     ],
     "total_posts_fetched": 6,
     "posts_cache_file": "posts_cache/Harper_posts.json",
-    "reels_cache_file": "posts_cache/Harper_reels.json"
+    "reels_cache_file": "posts_cache/Harper_reels.json",
+    "completed_reels": 1,
+    "completed_reel_indices": [
+      "1_0"
+    ]
   },
   "Maria": {
     "completed_carousels": 60,
@@ -275,8 +287,9 @@
     "total_posts_fetched": 3,
     "posts_cache_file": "posts_cache/Maria_posts.json",
     "reels_cache_file": "posts_cache/Maria_reels.json",
-    "completed_reels": 0,
+    "completed_reels": 1,
     "completed_reel_indices": [
+      "1_1",
       "1_0"
     ]
   },

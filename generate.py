@@ -56,6 +56,7 @@ from lib.reel_gen import (
     generate_kling_video,
     save_reel_metadata,
 )
+from lib.nanobanana_ugc_prompt import ugc_style_modifier
 
 logger = logging.getLogger("bloggers_factory")
 
@@ -318,8 +319,9 @@ def run_reel(
 
     # --- 5. Generate Nano Banana image (identity-preserving scene recreation) ---
     ref_urls = get_reference_image_urls(model_name, ref_dir, ref_cache)
-    logger.info("Generating Nano Banana image (scene recreation + identity)...")
-    _, nb_result = _generate_single_image(0, scene_prompt, ref_urls, aspect_ratio, model_name)
+    ugc_prompt = ugc_style_modifier(scene_prompt)
+    logger.info("Generating Nano Banana image (UGC scene recreation + identity)...")
+    _, nb_result = _generate_single_image(0, ugc_prompt, ref_urls, aspect_ratio, model_name)
     nb_images = nb_result.get("images", [])
     if not nb_images:
         logger.error("Nano Banana returned no image, aborting.")
