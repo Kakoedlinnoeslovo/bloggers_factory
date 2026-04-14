@@ -183,18 +183,13 @@ Each run scrapes a real blogger reel, analyzes it with GPT-4o and Gemini, and ge
 <img src="docs/examples/andrea/generated_image.png" width="280" alt="AI-generated image for Andrea">
 </p>
 
-**Source reel** &#8594; **AI-generated video (Kling)**
+**Source reel:**
 
-<table>
-<tr>
-<td><b>Source reel</b></td>
-<td><b>AI video</b></td>
-</tr>
-<tr>
-<td><video src="https://github.com/Kakoedlinnoeslovo/bloggers_factory/raw/main/docs/examples/andrea/source_reel.mp4" width="280" controls></video></td>
-<td><video src="https://github.com/Kakoedlinnoeslovo/bloggers_factory/raw/main/docs/examples/andrea/ai_video.mp4" width="280" controls></video></td>
-</tr>
-</table>
+![Source reel](docs/examples/andrea/source_reel.mp4)
+
+**AI-generated video (Kling):**
+
+![AI video](docs/examples/andrea/ai_video.mp4)
 
 <details>
 <summary>Generated prompts</summary>
@@ -217,18 +212,13 @@ Each run scrapes a real blogger reel, analyzes it with GPT-4o and Gemini, and ge
 <img src="docs/examples/amara/generated_image.png" width="280" alt="AI-generated image for amara">
 </p>
 
-**Source reel** &#8594; **AI-generated video (Kling)**
+**Source reel:**
 
-<table>
-<tr>
-<td><b>Source reel</b></td>
-<td><b>AI video</b></td>
-</tr>
-<tr>
-<td><video src="https://github.com/Kakoedlinnoeslovo/bloggers_factory/raw/main/docs/examples/amara/source_reel.mp4" width="280" controls></video></td>
-<td><video src="https://github.com/Kakoedlinnoeslovo/bloggers_factory/raw/main/docs/examples/amara/ai_video.mp4" width="280" controls></video></td>
-</tr>
-</table>
+![Source reel](docs/examples/amara/source_reel.mp4)
+
+**AI-generated video (Kling):**
+
+![AI video](docs/examples/amara/ai_video.mp4)
 
 <details>
 <summary>Generated prompts</summary>
@@ -251,18 +241,13 @@ Each run scrapes a real blogger reel, analyzes it with GPT-4o and Gemini, and ge
 <img src="docs/examples/nola/generated_image.png" width="280" alt="AI-generated image for nola">
 </p>
 
-**Source reel** &#8594; **AI-generated video (Kling)**
+**Source reel:**
 
-<table>
-<tr>
-<td><b>Source reel</b></td>
-<td><b>AI video</b></td>
-</tr>
-<tr>
-<td><video src="https://github.com/Kakoedlinnoeslovo/bloggers_factory/raw/main/docs/examples/nola/source_reel.mp4" width="280" controls></video></td>
-<td><video src="https://github.com/Kakoedlinnoeslovo/bloggers_factory/raw/main/docs/examples/nola/ai_video.mp4" width="280" controls></video></td>
-</tr>
-</table>
+![Source reel](docs/examples/nola/source_reel.mp4)
+
+**AI-generated video (Kling):**
+
+![AI video](docs/examples/nola/ai_video.mp4)
 
 <details>
 <summary>Generated prompts</summary>
