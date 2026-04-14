@@ -36,10 +36,6 @@ from lib.state import State, RefCache
 from lib.instagram import (
     fetch_all_blogger_posts,
     fetch_blogger_reels,
-    cache_posts,
-    load_cached_posts,
-    cache_reels,
-    load_cached_reels,
 )
 from lib.prompts import generate_prompts
 from lib.image_gen import (
@@ -75,6 +71,7 @@ def _resolve_model(model_name: str, config: dict) -> dict:
     return {
         "blogger": random.choice(model_cfg["bloggers"]),
         "blogger_first": model_cfg["bloggers"][0],
+        "bloggers": model_cfg["bloggers"],
         "ref_dir": model_cfg["ref_images_dir"],
         "output_base": Path(model_cfg.get("output_dir", config.get("output_dir", "output"))),
         "carousel_size": config.get("carousel_size", 5),
@@ -139,57 +136,64 @@ def generate_for_model(
     target: int,
     parallel: bool = True,
 ):
-    """Generate up to `target` carousels for one model, resumable."""
+    """Generate up to `target` carousels for one model, resumable.
+
+    Iterates over ALL bloggers in the model's config, fetches recent posts
+    (newest first), and skips any post whose Instagram code was already used
+    in a previous generation run.  Warns when a blogger has no fresh content.
+    """
     mc = _resolve_model(model_name, config)
-    blogger = mc["blogger_first"]
+    model_cfg = config["models"][model_name]
+    bloggers = model_cfg["bloggers"]
 
     ms = state.get_model(model_name)
+    carousel_count = ms["completed_carousels"]
+    used_codes: set[str] = set(ms.get("used_post_codes", []))
 
     logger.info("=" * 60)
-    logger.info("[%s] Blogger: @%s | Done: %d/%d", model_name, blogger, ms["completed_carousels"], target)
+    logger.info("[%s] Bloggers: %s | Done: %d/%d",
+                model_name, [f"@{b}" for b in bloggers], carousel_count, target)
     logger.info("=" * 60)
 
-    if ms["completed_carousels"] >= target:
+    if carousel_count >= target:
         logger.info("[%s] Already at target, skipping.", model_name)
         return
 
-    posts = None
-    if ms.get("posts_cache_file"):
-        posts = load_cached_posts(ms["posts_cache_file"])
-
-    if not posts:
-        posts = fetch_all_blogger_posts(blogger)
-        if not posts:
-            logger.error("[%s] No posts for @%s, skipping.", model_name, blogger)
-            return
-        cache_file = cache_posts(model_name, posts)
-        state.update_and_save(model_name, posts_cache_file=cache_file, total_posts_fetched=len(posts))
-        ms = state.get_model(model_name)
-
     ref_urls = get_reference_image_urls(model_name, mc["ref_dir"], ref_cache)
+    fetch_depth = getattr(generate_for_model, "_fetch_depth", None)
 
-    completed_indices = set(ms.get("completed_post_indices", []))
-    carousel_count = ms["completed_carousels"]
-    total_posts = len(posts)
+    for blogger in bloggers:
+        if carousel_count >= target:
+            break
 
-    logger.info("[%s] %d posts | Starting carousel #%d", model_name, total_posts, carousel_count + 1)
+        logger.info("[%s] Fetching posts for @%s...", model_name, blogger)
+        max_pages = fetch_depth if fetch_depth else 20
+        posts = fetch_all_blogger_posts(blogger, max_pages=max_pages)
+        if not posts:
+            logger.warning("[%s] No posts found for @%s, trying next blogger.", model_name, blogger)
+            continue
 
-    cycle = 0
-    while carousel_count < target:
-        cycle += 1
-        logger.info("[%s] CYCLE %d (%d more needed)", model_name, cycle, target - carousel_count)
+        posts.sort(key=lambda p: p.get("taken_at", 0), reverse=True)
+        fresh_posts = [p for p in posts if p.get("code") and p["code"] not in used_codes]
 
-        for post_idx, post in enumerate(posts):
+        if not fresh_posts:
+            logger.warning(
+                "[%s] @%s has no new (unused) posts -- consider changing blogger.",
+                model_name, blogger,
+            )
+            continue
+
+        logger.info("[%s] @%s: %d total posts, %d fresh (unused)",
+                    model_name, blogger, len(posts), len(fresh_posts))
+
+        for post_idx, post in enumerate(fresh_posts):
             if carousel_count >= target:
                 break
 
-            composite_key = f"{cycle}_{post_idx}"
-            if composite_key in completed_indices:
-                continue
-
             carousel_num = carousel_count + 1
-            logger.info("[%s] Carousel %d/%d | Cycle %d | Post %d/%d",
-                        model_name, carousel_num, target, cycle, post_idx + 1, total_posts)
+            logger.info("[%s] Carousel %d/%d | @%s | Post %d/%d (code=%s)",
+                        model_name, carousel_num, target, blogger,
+                        post_idx + 1, len(fresh_posts), post.get("code", ""))
 
             prompt_result = generate_prompts(
                 caption=post.get("caption", ""),
@@ -198,9 +202,9 @@ def generate_for_model(
             )
 
             if not prompt_result or not prompt_result.get("prompts"):
-                logger.warning("[%s] No prompts for post %d, skipping", model_name, post_idx)
-                completed_indices.add(composite_key)
-                state.update_and_save(model_name, completed_post_indices=list(completed_indices))
+                logger.warning("[%s] No prompts for post %s, skipping", model_name, post.get("code", ""))
+                used_codes.add(post["code"])
+                state.update_and_save(model_name, used_post_codes=list(used_codes))
                 continue
 
             logger.info("[%s] Theme: %s | Generating %d images...",
@@ -218,7 +222,7 @@ def generate_for_model(
             if generated_files:
                 save_metadata(
                     output_dir, model_name, blogger, post,
-                    prompt_result, generated_files, carousel_num, cycle,
+                    prompt_result, generated_files, carousel_num, 1,
                 )
                 carousel_count += 1
                 logger.info("[%s] SAVED carousel %d -> %s (%d images)",
@@ -226,12 +230,19 @@ def generate_for_model(
             else:
                 logger.warning("[%s] No images for carousel %d", model_name, carousel_num)
 
-            completed_indices.add(composite_key)
+            used_codes.add(post["code"])
             state.update_and_save(
                 model_name,
                 completed_carousels=carousel_count,
-                completed_post_indices=list(completed_indices),
+                used_post_codes=list(used_codes),
             )
+
+    if carousel_count < target:
+        logger.warning(
+            "[%s] All bloggers exhausted. Generated %d/%d carousels. "
+            "Add new bloggers to config or --reset to reuse old posts.",
+            model_name, carousel_count, target,
+        )
 
     logger.info("[%s] COMPLETED - %d carousels", model_name, carousel_count)
 
@@ -418,61 +429,64 @@ def generate_reels_for_model(
     target: int,
     args: argparse.Namespace,
 ):
-    """Generate up to *target* reels for one model, resumable."""
+    """Generate up to *target* reels for one model, resumable.
+
+    Iterates over ALL bloggers in the model's config, fetches recent reels
+    (newest first), and skips any reel whose Instagram code was already used.
+    Warns when a blogger has no fresh reels.
+    """
     mc = _resolve_model(model_name, config)
-    blogger = mc["blogger_first"]
+    model_cfg = config["models"][model_name]
+    bloggers = model_cfg["bloggers"]
 
     ms = state.get_model(model_name)
+    reel_count = ms.get("completed_reels", 0)
+    used_codes: set[str] = set(ms.get("used_reel_codes", []))
 
     logger.info("=" * 60)
-    logger.info("[%s] BULK REELS | Blogger: @%s | Done: %d/%d",
-                model_name, blogger, ms.get("completed_reels", 0), target)
+    logger.info("[%s] BULK REELS | Bloggers: %s | Done: %d/%d",
+                model_name, [f"@{b}" for b in bloggers], reel_count, target)
     logger.info("=" * 60)
 
-    if ms.get("completed_reels", 0) >= target:
+    if reel_count >= target:
         logger.info("[%s] Already at reel target, skipping.", model_name)
         return
 
-    reels = None
-    if ms.get("reels_cache_file"):
-        reels = load_cached_reels(ms["reels_cache_file"])
-
-    if not reels:
-        reels = fetch_blogger_reels(blogger)
-        if not reels:
-            logger.error("[%s] No reels for @%s, skipping.", model_name, blogger)
-            return
-        cache_file = cache_reels(model_name, reels)
-        state.update_and_save(model_name, reels_cache_file=cache_file)
-        ms = state.get_model(model_name)
-
-    completed_indices = set(ms.get("completed_reel_indices", []))
-    reel_count = ms.get("completed_reels", 0)
-    total_reels = len(reels)
-
-    logger.info("[%s] %d source reels | Starting reel #%d", model_name, total_reels, reel_count + 1)
-
-    max_consecutive_failures = total_reels * 2
+    fetch_depth = getattr(generate_reels_for_model, "_fetch_depth", None)
     consecutive_failures = 0
+    max_consecutive_failures = 20
 
-    cycle = 0
-    while reel_count < target:
-        cycle += 1
-        logger.info("[%s] CYCLE %d (%d more needed)", model_name, cycle, target - reel_count)
+    for blogger in bloggers:
+        if reel_count >= target:
+            break
 
-        cycle_had_success = False
-        for reel_idx, reel in enumerate(reels):
+        logger.info("[%s] Fetching reels for @%s...", model_name, blogger)
+        max_pages = fetch_depth if fetch_depth else 3
+        reels = fetch_blogger_reels(blogger, max_pages=max_pages)
+        if not reels:
+            logger.warning("[%s] No reels found for @%s, trying next blogger.", model_name, blogger)
+            continue
+
+        fresh_reels = [r for r in reels if r.get("code") and r["code"] not in used_codes]
+
+        if not fresh_reels:
+            logger.warning(
+                "[%s] @%s has no new (unused) reels -- consider changing blogger.",
+                model_name, blogger,
+            )
+            continue
+
+        logger.info("[%s] @%s: %d total reels, %d fresh (unused)",
+                    model_name, blogger, len(reels), len(fresh_reels))
+
+        for reel_idx, reel in enumerate(fresh_reels):
             if reel_count >= target:
                 break
 
-            composite_key = f"{cycle}_{reel_idx}"
-            if composite_key in completed_indices:
-                continue
-
             reel_num = reel_count + 1
-            logger.info("[%s] Reel %d/%d | Cycle %d | Source reel %d/%d (code=%s)",
-                        model_name, reel_num, target, cycle, reel_idx + 1, total_reels,
-                        reel.get("code", ""))
+            logger.info("[%s] Reel %d/%d | @%s | Source reel %d/%d (code=%s)",
+                        model_name, reel_num, target, blogger,
+                        reel_idx + 1, len(fresh_reels), reel.get("code", ""))
 
             try:
                 success = run_reel(
@@ -487,18 +501,17 @@ def generate_reels_for_model(
             if success:
                 reel_count += 1
                 consecutive_failures = 0
-                cycle_had_success = True
                 logger.info("[%s] COMPLETED reel %d/%d", model_name, reel_count, target)
             else:
                 consecutive_failures += 1
                 logger.warning("[%s] Reel %d failed (%d consecutive failures)",
                                model_name, reel_num, consecutive_failures)
 
-            completed_indices.add(composite_key)
+            used_codes.add(reel["code"])
             state.update_and_save(
                 model_name,
                 completed_reels=reel_count,
-                completed_reel_indices=list(completed_indices),
+                used_reel_codes=list(used_codes),
             )
 
             if consecutive_failures >= max_consecutive_failures:
@@ -508,10 +521,13 @@ def generate_reels_for_model(
 
         if consecutive_failures >= max_consecutive_failures:
             break
-        if not cycle_had_success:
-            logger.error("[%s] Entire cycle %d had no successes, aborting to avoid infinite loop.",
-                         model_name, cycle)
-            break
+
+    if reel_count < target:
+        logger.warning(
+            "[%s] All bloggers exhausted. Generated %d/%d reels. "
+            "Add new bloggers to config or --reset to reuse old reels.",
+            model_name, reel_count, target,
+        )
 
     logger.info("[%s] BULK REELS DONE - %d/%d reels completed", model_name, reel_count, target)
 
@@ -523,29 +539,33 @@ def generate_reels_for_model(
 def print_progress(state: State, config: dict, target: int, kind: str = "carousel"):
     """Print a progress table. kind is 'carousel' or 'reel'."""
     done_key = "completed_carousels" if kind == "carousel" else "completed_reels"
+    used_key = "used_post_codes" if kind == "carousel" else "used_reel_codes"
     title = "CAROUSEL PROGRESS" if kind == "carousel" else "REEL PROGRESS"
 
     logger.info("")
-    logger.info("=" * 70)
+    logger.info("=" * 80)
     logger.info(title)
-    logger.info("=" * 70)
-    logger.info("%-15s %-20s %10s %10s %8s", "Model", "Blogger", "Done", "Target", "Status")
-    logger.info("-" * 70)
+    logger.info("=" * 80)
+    logger.info("%-12s %-25s %8s %8s %8s %8s",
+                "Model", "Bloggers", "Done", "Target", "Used", "Status")
+    logger.info("-" * 80)
 
     total_done = total_target = 0
     for model_name, model_cfg in config["models"].items():
         ms = state.data.get(model_name, {})
         done = ms.get(done_key, 0)
-        blogger = model_cfg["bloggers"][0]
+        used = len(ms.get(used_key, []))
+        bloggers_str = ", ".join(f"@{b}" for b in model_cfg["bloggers"])
         status = "DONE" if done >= target else f"{done}/{target}"
-        logger.info("%-15s %-20s %10d %10d %8s", model_name, blogger, done, target, status)
+        logger.info("%-12s %-25s %8d %8d %8d %8s",
+                    model_name, bloggers_str, done, target, used, status)
         total_done += done
         total_target += target
 
-    logger.info("-" * 70)
-    logger.info("%-15s %-20s %10d %10d %8s", "TOTAL", "", total_done, total_target,
+    logger.info("-" * 80)
+    logger.info("%-12s %-25s %8d %8d %8s %8s", "TOTAL", "", total_done, total_target, "",
                 "DONE" if total_done >= total_target else f"{total_done}/{total_target}")
-    logger.info("=" * 70)
+    logger.info("=" * 80)
 
 
 # ---------------------------------------------------------------------------
@@ -567,16 +587,20 @@ def _run_bulk(
     """Run worker_fn for each model, optionally in parallel. Handles timing and progress."""
     label = "BULK REELS" if kind == "reel" else "ALL"
 
-    logger.info("Bulk %s Generator | Models: %s | Target: %d/model | Parallel: %s",
-                kind.title(), models, target, parallel)
+    fetch_depth = getattr(extra_args, "fetch_depth", None) if extra_args else None
+
+    logger.info("Bulk %s Generator | Models: %s | Target: %d/model | Parallel: %s | Fetch-depth: %s",
+                kind.title(), models, target, parallel, fetch_depth or "auto")
     print_progress(state, config, target, kind)
 
     start_time = time.time()
 
     def _call(name):
         if kind == "reel":
+            generate_reels_for_model._fetch_depth = fetch_depth
             worker_fn(name, config, state, ref_cache, target, extra_args)
         else:
+            generate_for_model._fetch_depth = fetch_depth
             worker_fn(name, config, state, ref_cache, target, parallel)
 
     if parallel:
@@ -638,6 +662,8 @@ def main():
                         help="Kling video duration in seconds (default: 5)")
     parser.add_argument("--vision-model", type=str, default="google/gemini-2.5-flash",
                         help="Vision model for motion analysis (default: google/gemini-2.5-flash)")
+    parser.add_argument("--fetch-depth", type=int, default=None,
+                        help="Max API pages to fetch per blogger (default: auto based on target)")
     args = parser.parse_args()
 
     setup_logging(verbose=args.verbose, parallel=args.parallel)
@@ -701,6 +727,7 @@ def main():
     _run_bulk(
         generate_for_model, models_to_run, config, state, RefCache(),
         args.min_carousels, "carousel", args.parallel, args.workers,
+        extra_args=args,
     )
 
 

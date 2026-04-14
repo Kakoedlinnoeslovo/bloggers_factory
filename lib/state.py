@@ -44,6 +44,8 @@ class State:
                     "completed_reels": 0,
                     "completed_reel_indices": [],
                     "reels_cache_file": "",
+                    "used_post_codes": [],
+                    "used_reel_codes": [],
                 }
             return self._data[model_name]
 
