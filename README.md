@@ -183,13 +183,6 @@ Each run scrapes a real blogger reel, analyzes it with GPT-4o and Gemini, and ge
 <img src="docs/examples/andrea/generated_image.png" width="280" alt="AI-generated image for Andrea">
 </p>
 
-**Source reel:**
-
-<video src="docs/examples/andrea/source_reel.mp4" width="320" controls></video>
-
-**AI-generated video (Kling):**
-
-<video src="docs/examples/andrea/ai_video.mp4" width="320" controls></video>
 
 <details>
 <summary>Generated prompts</summary>
@@ -212,13 +205,6 @@ Each run scrapes a real blogger reel, analyzes it with GPT-4o and Gemini, and ge
 <img src="docs/examples/amara/generated_image.png" width="280" alt="AI-generated image for amara">
 </p>
 
-**Source reel:**
-
-<video src="docs/examples/amara/source_reel.mp4" width="320" controls></video>
-
-**AI-generated video (Kling):**
-
-<video src="docs/examples/amara/ai_video.mp4" width="320" controls></video>
 
 <details>
 <summary>Generated prompts</summary>
@@ -241,13 +227,6 @@ Each run scrapes a real blogger reel, analyzes it with GPT-4o and Gemini, and ge
 <img src="docs/examples/nola/generated_image.png" width="280" alt="AI-generated image for nola">
 </p>
 
-**Source reel:**
-
-<video src="docs/examples/nola/source_reel.mp4" width="320" controls></video>
-
-**AI-generated video (Kling):**
-
-<video src="docs/examples/nola/ai_video.mp4" width="320" controls></video>
 
 <details>
 <summary>Generated prompts</summary>
