@@ -53,8 +53,8 @@ Requirements:
 - action_progression: ordered temporal changes
 - camera_motion: camera movement across frames
 - consistency_constraints: elements that should remain stable
-- kling_prompt: final prompt under 120 words for image-to-video from a single still image
-- negative_prompt: concise unwanted artifacts or motion problems"""
+- kling_prompt: final prompt under 120 words for image-to-video from a single still image. The prompt MUST describe one continuous smooth motion sequence — no scene cuts, no abrupt transitions, no sudden jumps between poses. Use words like "slowly", "gently", "gradually", "smoothly transitions into" to ensure fluid animation. Describe motion as a single flowing arc from start to end.
+- negative_prompt: concise unwanted artifacts or motion problems. Always include: abrupt transitions, sudden jumps, jerky motion, frame skipping, discontinuous movement"""
 
 
 # ---------------------------------------------------------------------------
@@ -176,22 +176,22 @@ def generate_kling_video(
     prompt: str,
     negative_prompt: str = "",
     duration: int = 5,
-    aspect_ratio: str = "9:16",
+    generate_audio: bool = True,
 ) -> dict | None:
-    """Generate a video from a still image using Kling via fal.ai."""
+    """Generate a video from a still image using Kling v3 Pro via fal.ai."""
     duration_str = str(duration)
 
     for attempt in range(3):
         try:
-            logger.info("Submitting Kling img2vid (duration=%ss, aspect=%s)...", duration_str, aspect_ratio)
+            logger.info("Submitting Kling v3 Pro img2vid (duration=%ss, audio=%s)...", duration_str, generate_audio)
             result = fal_client.subscribe(
-                "fal-ai/kling-video/v2.1/master/image-to-video",
+                "fal-ai/kling-video/v3/pro/image-to-video",
                 arguments={
-                    "image_url": image_url,
+                    "start_image_url": image_url,
                     "prompt": prompt,
                     "negative_prompt": negative_prompt,
                     "duration": duration_str,
-                    "aspect_ratio": aspect_ratio,
+                    "generate_audio": generate_audio,
                 },
                 with_logs=False,
             )

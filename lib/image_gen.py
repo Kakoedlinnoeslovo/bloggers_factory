@@ -65,7 +65,10 @@ def get_reference_image_urls(
     logger.info("Uploading %d ref images for %s...", len(selected), model_name)
     urls = []
     for img_file in selected:
-        url = fal_client.upload_file(str(img_file))
+        safe_name = img_file.name.encode("ascii", "replace").decode("ascii")
+        mime = "image/png" if img_file.suffix.lower() == ".png" else "image/jpeg"
+        with open(img_file, "rb") as fh:
+            url = fal_client.upload(fh.read(), mime, file_name=safe_name)
         urls.append(url)
 
     ref_cache.set(model_name, urls)

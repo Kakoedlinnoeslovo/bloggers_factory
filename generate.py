@@ -21,6 +21,7 @@ import argparse
 import json
 import logging
 import random
+import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -286,6 +287,11 @@ def run_reel(
     intermediate_dir = output_dir / "intermediate_data"
     intermediate_dir.mkdir(parents=True, exist_ok=True)
 
+    def _cleanup_on_failure():
+        if output_dir.exists():
+            shutil.rmtree(output_dir, ignore_errors=True)
+            logger.info("Cleaned up failed reel dir: %s", output_dir)
+
     if reel_source:
         logger.info("Using reel source: %s", reel_source)
     else:
@@ -293,6 +299,7 @@ def run_reel(
         reels = fetch_blogger_reels(blogger, max_pages=1)
         if not reels:
             logger.error("No reels found for @%s", blogger)
+            _cleanup_on_failure()
             return False
         reel = random.choice(reels[:5] if len(reels) >= 5 else reels)
         reel_source = reel["video_url"]
@@ -307,6 +314,7 @@ def run_reel(
     frames = extract_frames(video_path, num_frames=3, output_dir=intermediate_dir)
     if not frames:
         logger.error("No frames extracted, aborting.")
+        _cleanup_on_failure()
         return False
     logger.info("Extracted %d frames", len(frames))
 
@@ -314,6 +322,7 @@ def run_reel(
     scene_prompt = generate_scene_prompt(frames[0])
     if not scene_prompt:
         logger.error("Failed to generate scene prompt, aborting.")
+        _cleanup_on_failure()
         return False
     logger.info("Scene prompt: %s", scene_prompt[:120])
 
@@ -325,6 +334,7 @@ def run_reel(
     nb_images = nb_result.get("images", [])
     if not nb_images:
         logger.error("Nano Banana returned no image, aborting.")
+        _cleanup_on_failure()
         return False
 
     nb_image_url = nb_images[0]["url"]
@@ -338,6 +348,7 @@ def run_reel(
     vision_result = analyze_motion_with_vision(frames, master_prompt, vision_model)
     if not vision_result:
         logger.error("Vision analysis failed, aborting.")
+        _cleanup_on_failure()
         return False
     logger.info("Kling prompt: %s", vision_result.get("kling_prompt", "")[:120])
 
@@ -346,6 +357,7 @@ def run_reel(
     negative_prompt = vision_result.get("negative_prompt", "")
     if not kling_prompt:
         logger.error("Vision analysis produced no kling_prompt, aborting.")
+        _cleanup_on_failure()
         return False
 
     kling_result = generate_kling_video(
@@ -353,22 +365,24 @@ def run_reel(
         prompt=kling_prompt,
         negative_prompt=negative_prompt,
         duration=duration,
-        aspect_ratio=aspect_ratio,
     )
     if not kling_result:
         logger.error("Kling video generation failed, aborting.")
+        _cleanup_on_failure()
         return False
 
     # --- 8. Download output video ---
     video_url = kling_result.get("video", {}).get("url", "")
     if not video_url:
         logger.error("Kling returned no video URL.")
+        _cleanup_on_failure()
         return False
 
     video_filename = f"{reel_code}.mp4" if reel_code else "output_video.mp4"
     video_dest = output_dir / video_filename
     if not download_file(video_url, video_dest, timeout=120):
         logger.error("Failed to download output video.")
+        _cleanup_on_failure()
         return False
     logger.info("Output video saved: %s", video_dest)
 
@@ -439,11 +453,15 @@ def generate_reels_for_model(
 
     logger.info("[%s] %d source reels | Starting reel #%d", model_name, total_reels, reel_count + 1)
 
+    max_consecutive_failures = total_reels * 2
+    consecutive_failures = 0
+
     cycle = 0
     while reel_count < target:
         cycle += 1
         logger.info("[%s] CYCLE %d (%d more needed)", model_name, cycle, target - reel_count)
 
+        cycle_had_success = False
         for reel_idx, reel in enumerate(reels):
             if reel_count >= target:
                 break
@@ -469,9 +487,13 @@ def generate_reels_for_model(
 
             if success:
                 reel_count += 1
+                consecutive_failures = 0
+                cycle_had_success = True
                 logger.info("[%s] COMPLETED reel %d/%d", model_name, reel_count, target)
             else:
-                logger.warning("[%s] Reel %d failed, continuing", model_name, reel_num)
+                consecutive_failures += 1
+                logger.warning("[%s] Reel %d failed (%d consecutive failures)",
+                               model_name, reel_num, consecutive_failures)
 
             completed_indices.add(composite_key)
             state.update_and_save(
@@ -480,7 +502,19 @@ def generate_reels_for_model(
                 completed_reel_indices=list(completed_indices),
             )
 
-    logger.info("[%s] BULK REELS COMPLETED - %d reels", model_name, reel_count)
+            if consecutive_failures >= max_consecutive_failures:
+                logger.error("[%s] Too many consecutive failures (%d), aborting.",
+                             model_name, consecutive_failures)
+                break
+
+        if consecutive_failures >= max_consecutive_failures:
+            break
+        if not cycle_had_success:
+            logger.error("[%s] Entire cycle %d had no successes, aborting to avoid infinite loop.",
+                         model_name, cycle)
+            break
+
+    logger.info("[%s] BULK REELS DONE - %d/%d reels completed", model_name, reel_count, target)
 
 
 # ---------------------------------------------------------------------------
