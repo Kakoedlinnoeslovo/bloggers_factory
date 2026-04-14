@@ -9,7 +9,7 @@ import fal_client
 from openai import OpenAI
 
 from .nanobanana_ugc_prompt import UGC_SYSTEM_PROMPT, UGC_USER_SUFFIX
-from .utils import download_file
+from .utils import download_file, retry
 
 logger = logging.getLogger("bloggers_factory")
 
@@ -72,39 +72,29 @@ def generate_scene_prompt(frame_path: Path) -> str | None:
     frame_url = fal_client.upload_file(str(frame_path))
     logger.info("Uploaded frame for scene analysis: %s", frame_path.name)
 
-    for attempt in range(3):
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": SCENE_RECREATION_SYSTEM_PROMPT},
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": UGC_USER_SUFFIX,
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": frame_url, "detail": "high"},
-                            },
-                        ],
-                    },
-                ],
-                temperature=0.7,
-                max_tokens=500,
-            )
-            prompt = response.choices[0].message.content.strip()
-            logger.info("Scene prompt generated (%d chars)", len(prompt))
-            return prompt
+    @retry(delay=5, backoff=2, default=None)
+    def _call():
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": SCENE_RECREATION_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": UGC_USER_SUFFIX},
+                        {"type": "image_url", "image_url": {"url": frame_url, "detail": "high"}},
+                    ],
+                },
+            ],
+            temperature=0.7,
+            max_tokens=500,
+        )
+        return response.choices[0].message.content.strip()
 
-        except Exception as e:
-            logger.warning("Scene prompt generation failed (attempt %d/3): %s", attempt + 1, e)
-            if attempt < 2:
-                time.sleep(5 * (attempt + 1))
-
-    return None
+    prompt = _call()
+    if prompt:
+        logger.info("Scene prompt generated (%d chars)", len(prompt))
+    return prompt
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +161,7 @@ def analyze_motion_with_vision(
 # Kling image-to-video generation
 # ---------------------------------------------------------------------------
 
+@retry(delay=15, backoff=2, default=None)
 def generate_kling_video(
     image_url: str,
     prompt: str,
@@ -180,35 +171,25 @@ def generate_kling_video(
 ) -> dict | None:
     """Generate a video from a still image using Kling v3 Pro via fal.ai."""
     duration_str = str(duration)
+    logger.info("Submitting Kling v3 Pro img2vid (duration=%ss, audio=%s)...", duration_str, generate_audio)
+    result = fal_client.subscribe(
+        "fal-ai/kling-video/v3/pro/image-to-video",
+        arguments={
+            "start_image_url": image_url,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "duration": duration_str,
+            "generate_audio": generate_audio,
+        },
+        with_logs=False,
+    )
 
-    for attempt in range(3):
-        try:
-            logger.info("Submitting Kling v3 Pro img2vid (duration=%ss, audio=%s)...", duration_str, generate_audio)
-            result = fal_client.subscribe(
-                "fal-ai/kling-video/v3/pro/image-to-video",
-                arguments={
-                    "start_image_url": image_url,
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "duration": duration_str,
-                    "generate_audio": generate_audio,
-                },
-                with_logs=False,
-            )
-
-            video_url = result.get("video", {}).get("url", "")
-            if video_url:
-                logger.info("Kling video generated: %s", video_url[:80])
-            else:
-                logger.warning("Kling returned no video URL")
-            return result
-
-        except Exception as e:
-            logger.warning("Kling generation failed (attempt %d/3): %s", attempt + 1, e)
-            if attempt < 2:
-                time.sleep(15 * (attempt + 1))
-
-    return None
+    video_url = result.get("video", {}).get("url", "")
+    if video_url:
+        logger.info("Kling video generated: %s", video_url[:80])
+    else:
+        logger.warning("Kling returned no video URL")
+    return result
 
 
 # ---------------------------------------------------------------------------

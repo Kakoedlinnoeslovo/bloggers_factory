@@ -97,13 +97,16 @@ logs/
 *.ogg
 *.flac
 *.aac
-*.json
 
 # Static / generated output files
 output/
 output2/
 tmp/
+
+# Runtime / generated data
+bulk_generation_state.json
 ref_urls_cache.json
+posts_cache/
 
 # OS files
 .DS_Store

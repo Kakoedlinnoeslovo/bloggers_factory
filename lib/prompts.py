@@ -1,11 +1,10 @@
 import json
 import logging
 import os
-import time
 
 from openai import OpenAI
 
-from .utils import download_image_as_base64
+from .utils import download_image_as_base64, retry
 
 logger = logging.getLogger("bloggers_factory")
 
@@ -54,44 +53,37 @@ def generate_prompts(
         logger.error("Could not download inspiration image")
         return None
 
-    for attempt in range(3):
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": system},
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": (
-                                    f"Instagram caption:\n{caption}\n\n"
-                                    f"Analyze this post and generate {carousel_size} image prompts."
-                                ),
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": image_data_uri, "detail": "high"},
-                            },
-                        ],
-                    },
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.9,
-                max_tokens=1500,
-            )
+    @retry(delay=5, backoff=2, default=None)
+    def _call():
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system},
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                f"Instagram caption:\n{caption}\n\n"
+                                f"Analyze this post and generate {carousel_size} image prompts."
+                            ),
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": image_data_uri, "detail": "high"},
+                        },
+                    ],
+                },
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.9,
+            max_tokens=1500,
+        )
+        raw = response.choices[0].message.content
+        result = json.loads(raw)
+        logger.info("Theme: %s | %d prompts generated",
+                     result.get("theme", ""), len(result.get("prompts", [])))
+        return result
 
-            raw = response.choices[0].message.content
-            result = json.loads(raw)
-            theme = result.get("theme", "")
-            prompts = result.get("prompts", [])
-            logger.info("Theme: %s | %d prompts generated", theme, len(prompts))
-            return result
-
-        except Exception as e:
-            logger.warning("GPT-4o failed (attempt %d/3): %s", attempt + 1, e)
-            if attempt < 2:
-                time.sleep(5 * (attempt + 1))
-
-    return None
+    return _call()

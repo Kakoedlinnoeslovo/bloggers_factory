@@ -46,7 +46,7 @@ from lib.image_gen import (
     ensure_fal_key,
     get_reference_image_urls,
     generate_carousel_images,
-    _generate_single_image,
+    generate_single_image,
     download_images,
     save_metadata,
 )
@@ -69,6 +69,19 @@ def load_config(path: str = "config.json") -> dict:
         return json.load(f)
 
 
+def _resolve_model(model_name: str, config: dict) -> dict:
+    """Extract common model parameters from config."""
+    model_cfg = config["models"][model_name]
+    return {
+        "blogger": random.choice(model_cfg["bloggers"]),
+        "blogger_first": model_cfg["bloggers"][0],
+        "ref_dir": model_cfg["ref_images_dir"],
+        "output_base": Path(model_cfg.get("output_dir", config.get("output_dir", "output"))),
+        "carousel_size": config.get("carousel_size", 5),
+        "aspect_ratio": config.get("aspect_ratio", "4:5"),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Single-carousel mode (replaces generate_posts.py)
 # ---------------------------------------------------------------------------
@@ -77,19 +90,13 @@ def run_single(model_name: str, config: dict):
     """Generate one carousel for a model (random inspiration post)."""
     ensure_fal_key()
     ref_cache = RefCache()
+    mc = _resolve_model(model_name, config)
 
-    model_cfg = config["models"][model_name]
-    blogger = random.choice(model_cfg["bloggers"])
-    ref_dir = model_cfg["ref_images_dir"]
-    carousel_size = config.get("carousel_size", 5)
-    aspect_ratio = config.get("aspect_ratio", "4:5")
-    output_base = Path(model_cfg.get("output_dir", config.get("output_dir", "output")))
+    logger.info("Single mode | Model: %s | Blogger: @%s", model_name, mc["blogger"])
 
-    logger.info("Single mode | Model: %s | Blogger: @%s", model_name, blogger)
-
-    posts = fetch_all_blogger_posts(blogger, max_pages=1)
+    posts = fetch_all_blogger_posts(mc["blogger"], max_pages=1)
     if not posts:
-        logger.error("No posts found for @%s", blogger)
+        logger.error("No posts found for @%s", mc["blogger"])
         return
 
     top = posts[:5] if len(posts) >= 5 else posts
@@ -100,23 +107,23 @@ def run_single(model_name: str, config: dict):
     prompt_result = generate_prompts(
         caption=inspiration["caption"],
         image_url=inspiration["image_url"],
-        carousel_size=carousel_size,
+        carousel_size=mc["carousel_size"],
     )
     if not prompt_result or not prompt_result.get("prompts"):
         logger.error("No prompts generated, aborting.")
         return
 
-    ref_urls = get_reference_image_urls(model_name, ref_dir, ref_cache)
+    ref_urls = get_reference_image_urls(model_name, mc["ref_dir"], ref_cache)
     results = generate_carousel_images(
-        prompt_result["prompts"], ref_urls, aspect_ratio, model_name, parallel=True,
+        prompt_result["prompts"], ref_urls, mc["aspect_ratio"], model_name, parallel=True,
     )
 
     tag = datetime.now().strftime("%Y-%m-%d") + "_" + str(random.randint(1, 1_000_000))
-    output_dir = output_base / model_name / tag
+    output_dir = mc["output_base"] / model_name / tag
     generated = download_images(results, output_dir, parallel=True)
 
     if generated:
-        save_metadata(output_dir, model_name, blogger, inspiration, prompt_result, generated, 1, 1)
+        save_metadata(output_dir, model_name, mc["blogger"], inspiration, prompt_result, generated, 1, 1)
     logger.info("Done: %d images -> %s", len(generated), output_dir)
 
 
@@ -133,12 +140,8 @@ def generate_for_model(
     parallel: bool = True,
 ):
     """Generate up to `target` carousels for one model, resumable."""
-    model_cfg = config["models"][model_name]
-    blogger = model_cfg["bloggers"][0]
-    ref_dir = model_cfg["ref_images_dir"]
-    carousel_size = config.get("carousel_size", 5)
-    aspect_ratio = config.get("aspect_ratio", "4:5")
-    output_base = Path(model_cfg.get("output_dir", config.get("output_dir", "output")))
+    mc = _resolve_model(model_name, config)
+    blogger = mc["blogger_first"]
 
     ms = state.get_model(model_name)
 
@@ -163,7 +166,7 @@ def generate_for_model(
         state.update_and_save(model_name, posts_cache_file=cache_file, total_posts_fetched=len(posts))
         ms = state.get_model(model_name)
 
-    ref_urls = get_reference_image_urls(model_name, ref_dir, ref_cache)
+    ref_urls = get_reference_image_urls(model_name, mc["ref_dir"], ref_cache)
 
     completed_indices = set(ms.get("completed_post_indices", []))
     carousel_count = ms["completed_carousels"]
@@ -191,7 +194,7 @@ def generate_for_model(
             prompt_result = generate_prompts(
                 caption=post.get("caption", ""),
                 image_url=post.get("image_url", ""),
-                carousel_size=carousel_size,
+                carousel_size=mc["carousel_size"],
             )
 
             if not prompt_result or not prompt_result.get("prompts"):
@@ -204,12 +207,12 @@ def generate_for_model(
                         model_name, prompt_result.get("theme", ""), len(prompt_result["prompts"]))
 
             results = generate_carousel_images(
-                prompt_result["prompts"], ref_urls, aspect_ratio, model_name, parallel=parallel,
+                prompt_result["prompts"], ref_urls, mc["aspect_ratio"], model_name, parallel=parallel,
             )
 
             date_tag = datetime.now().strftime("%Y-%m-%d")
             dir_name = f"{date_tag}_carousel_{carousel_num:03d}"
-            output_dir = output_base / model_name / dir_name
+            output_dir = mc["output_base"] / model_name / dir_name
             generated_files = download_images(results, output_dir, parallel=parallel)
 
             if generated_files:
@@ -258,17 +261,13 @@ def run_reel(
     """
     ensure_fal_key()
     ref_cache = shared_ref_cache or RefCache()
-
-    model_cfg = config["models"][model_name]
-    blogger = random.choice(model_cfg["bloggers"])
-    ref_dir = model_cfg["ref_images_dir"]
-    output_base = Path(model_cfg.get("output_dir", config.get("output_dir", "output")))
+    mc = _resolve_model(model_name, config)
     aspect_ratio = "9:16"
     duration = args.duration
     vision_model = args.vision_model
 
     logger.info("=" * 60)
-    logger.info("REEL-TO-VIDEO | Model: %s | Blogger: @%s", model_name, blogger)
+    logger.info("REEL-TO-VIDEO | Model: %s | Blogger: @%s", model_name, mc["blogger"])
     logger.info("=" * 60)
 
     # --- 1. Resolve reel source ---
@@ -283,7 +282,7 @@ def run_reel(
         reel_source = getattr(args, "reel_source", None)
 
     tag = datetime.now().strftime("%Y-%m-%d") + "_" + str(random.randint(1, 1_000_000))
-    output_dir = output_base / model_name / f"reel_{tag}"
+    output_dir = mc["output_base"] / model_name / f"reel_{tag}"
     intermediate_dir = output_dir / "intermediate_data"
     intermediate_dir.mkdir(parents=True, exist_ok=True)
 
@@ -295,10 +294,10 @@ def run_reel(
     if reel_source:
         logger.info("Using reel source: %s", reel_source)
     else:
-        logger.info("Fetching reels for @%s...", blogger)
-        reels = fetch_blogger_reels(blogger, max_pages=1)
+        logger.info("Fetching reels for @%s...", mc["blogger"])
+        reels = fetch_blogger_reels(mc["blogger"], max_pages=1)
         if not reels:
-            logger.error("No reels found for @%s", blogger)
+            logger.error("No reels found for @%s", mc["blogger"])
             _cleanup_on_failure()
             return False
         reel = random.choice(reels[:5] if len(reels) >= 5 else reels)
@@ -327,10 +326,10 @@ def run_reel(
     logger.info("Scene prompt: %s", scene_prompt[:120])
 
     # --- 5. Generate Nano Banana image (identity-preserving scene recreation) ---
-    ref_urls = get_reference_image_urls(model_name, ref_dir, ref_cache)
+    ref_urls = get_reference_image_urls(model_name, mc["ref_dir"], ref_cache)
     ugc_prompt = ugc_style_modifier(scene_prompt)
     logger.info("Generating Nano Banana image (UGC scene recreation + identity)...")
-    _, nb_result = _generate_single_image(0, ugc_prompt, ref_urls, aspect_ratio, model_name)
+    _, nb_result = generate_single_image(0, ugc_prompt, ref_urls, aspect_ratio, model_name)
     nb_images = nb_result.get("images", [])
     if not nb_images:
         logger.error("Nano Banana returned no image, aborting.")
@@ -391,7 +390,7 @@ def run_reel(
     save_reel_metadata(
         output_dir=intermediate_dir,
         model_name=model_name,
-        blogger=blogger,
+        blogger=mc["blogger"],
         reel_source=reel_source,
         reel_code=reel_code,
         scene_prompt=scene_prompt,
@@ -420,8 +419,8 @@ def generate_reels_for_model(
     args: argparse.Namespace,
 ):
     """Generate up to *target* reels for one model, resumable."""
-    model_cfg = config["models"][model_name]
-    blogger = model_cfg["bloggers"][0]
+    mc = _resolve_model(model_name, config)
+    blogger = mc["blogger_first"]
 
     ms = state.get_model(model_name)
 
@@ -521,10 +520,14 @@ def generate_reels_for_model(
 # Progress display
 # ---------------------------------------------------------------------------
 
-def print_progress(state: State, config: dict, target: int):
+def print_progress(state: State, config: dict, target: int, kind: str = "carousel"):
+    """Print a progress table. kind is 'carousel' or 'reel'."""
+    done_key = "completed_carousels" if kind == "carousel" else "completed_reels"
+    title = "CAROUSEL PROGRESS" if kind == "carousel" else "REEL PROGRESS"
+
     logger.info("")
     logger.info("=" * 70)
-    logger.info("PROGRESS SUMMARY")
+    logger.info(title)
     logger.info("=" * 70)
     logger.info("%-15s %-20s %10s %10s %8s", "Model", "Blogger", "Done", "Target", "Status")
     logger.info("-" * 70)
@@ -532,7 +535,7 @@ def print_progress(state: State, config: dict, target: int):
     total_done = total_target = 0
     for model_name, model_cfg in config["models"].items():
         ms = state.data.get(model_name, {})
-        done = ms.get("completed_carousels", 0)
+        done = ms.get(done_key, 0)
         blogger = model_cfg["bloggers"][0]
         status = "DONE" if done >= target else f"{done}/{target}"
         logger.info("%-15s %-20s %10d %10d %8s", model_name, blogger, done, target, status)
@@ -545,28 +548,68 @@ def print_progress(state: State, config: dict, target: int):
     logger.info("=" * 70)
 
 
-def print_reel_progress(state: State, config: dict, target: int):
+# ---------------------------------------------------------------------------
+# Bulk runner (shared by carousel and reel bulk modes)
+# ---------------------------------------------------------------------------
+
+def _run_bulk(
+    worker_fn,
+    models: list[str],
+    config: dict,
+    state: State,
+    ref_cache: RefCache,
+    target: int,
+    kind: str,
+    parallel: bool,
+    workers: int,
+    extra_args=None,
+):
+    """Run worker_fn for each model, optionally in parallel. Handles timing and progress."""
+    label = "BULK REELS" if kind == "reel" else "ALL"
+
+    logger.info("Bulk %s Generator | Models: %s | Target: %d/model | Parallel: %s",
+                kind.title(), models, target, parallel)
+    print_progress(state, config, target, kind)
+
+    start_time = time.time()
+
+    def _call(name):
+        if kind == "reel":
+            worker_fn(name, config, state, ref_cache, target, extra_args)
+        else:
+            worker_fn(name, config, state, ref_cache, target, parallel)
+
+    if parallel:
+        num_workers = min(workers, len(models))
+        with ThreadPoolExecutor(max_workers=num_workers, thread_name_prefix=kind) as executor:
+            futures = {
+                executor.submit(_call, name): name
+                for name in models if name in config["models"]
+            }
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    future.result()
+                    logger.info("[%s] Worker finished", name)
+                except Exception:
+                    logger.exception("[%s] Worker FAILED", name)
+    else:
+        for name in models:
+            try:
+                _call(name)
+            except Exception:
+                logger.exception("FATAL for %s - continuing", name)
+            print_progress(state, config, target, kind)
+
+    elapsed = time.time() - start_time
+    h, rem = divmod(elapsed, 3600)
+    m, s = divmod(rem, 60)
+
     logger.info("")
     logger.info("=" * 70)
-    logger.info("REEL PROGRESS SUMMARY")
+    logger.info("%s DONE | Time: %dh %dm %ds", label, h, m, s)
     logger.info("=" * 70)
-    logger.info("%-15s %-20s %10s %10s %8s", "Model", "Blogger", "Done", "Target", "Status")
-    logger.info("-" * 70)
-
-    total_done = total_target = 0
-    for model_name, model_cfg in config["models"].items():
-        ms = state.data.get(model_name, {})
-        done = ms.get("completed_reels", 0)
-        blogger = model_cfg["bloggers"][0]
-        status = "DONE" if done >= target else f"{done}/{target}"
-        logger.info("%-15s %-20s %10d %10d %8s", model_name, blogger, done, target, status)
-        total_done += done
-        total_target += target
-
-    logger.info("-" * 70)
-    logger.info("%-15s %-20s %10d %10d %8s", "TOTAL", "", total_done, total_target,
-                "DONE" if total_done >= total_target else f"{total_done}/{total_target}")
-    logger.info("=" * 70)
+    print_progress(state, config, target, kind)
 
 
 # ---------------------------------------------------------------------------
@@ -602,10 +645,9 @@ def main():
     state = State()
     state.load()
 
-    target = args.min_carousels
-
     if args.status:
-        print_progress(state, config, target)
+        print_progress(state, config, args.min_carousels, "carousel")
+        print_progress(state, config, args.min_reels, "reel")
         return
 
     if args.reset:
@@ -626,49 +668,11 @@ def main():
     # --- Reel-to-video mode ---
     if args.reel:
         if args.bulk:
-            reel_target = args.min_reels
             models_to_run = [args.model] if args.model else list(config["models"].keys())
-            ref_cache = RefCache()
-
-            logger.info("Bulk Reel Generator | Models: %s | Target: %d/model | Parallel: %s",
-                        models_to_run, reel_target, args.parallel)
-            print_reel_progress(state, config, reel_target)
-
-            start_time = time.time()
-
-            if args.parallel:
-                num_workers = min(args.workers, len(models_to_run))
-                with ThreadPoolExecutor(max_workers=num_workers, thread_name_prefix="reel") as executor:
-                    futures = {
-                        executor.submit(
-                            generate_reels_for_model, name, config, state, ref_cache, reel_target, args
-                        ): name
-                        for name in models_to_run if name in config["models"]
-                    }
-                    for future in as_completed(futures):
-                        name = futures[future]
-                        try:
-                            future.result()
-                            logger.info("[%s] Reel worker finished", name)
-                        except Exception:
-                            logger.exception("[%s] Reel worker FAILED", name)
-            else:
-                for name in models_to_run:
-                    try:
-                        generate_reels_for_model(name, config, state, ref_cache, reel_target, args)
-                    except Exception:
-                        logger.exception("FATAL reel for %s - continuing", name)
-                    print_reel_progress(state, config, reel_target)
-
-            elapsed = time.time() - start_time
-            h, rem = divmod(elapsed, 3600)
-            m, s = divmod(rem, 60)
-
-            logger.info("")
-            logger.info("=" * 70)
-            logger.info("BULK REELS DONE | Time: %dh %dm %ds", h, m, s)
-            logger.info("=" * 70)
-            print_reel_progress(state, config, reel_target)
+            _run_bulk(
+                generate_reels_for_model, models_to_run, config, state, RefCache(),
+                args.min_reels, "reel", args.parallel, args.workers, extra_args=args,
+            )
             return
 
         if not args.model:
@@ -692,49 +696,12 @@ def main():
                 logger.exception("Failed for model %s", model_name)
         return
 
-    # --- Bulk mode ---
+    # --- Bulk carousel mode ---
     models_to_run = [args.model] if args.model else list(config["models"].keys())
-    ref_cache = RefCache()
-
-    logger.info("Bulk Generator | Models: %s | Target: %d/model | Parallel: %s",
-                models_to_run, target, args.parallel)
-    print_progress(state, config, target)
-
-    start_time = time.time()
-
-    if args.parallel:
-        num_workers = min(args.workers, len(models_to_run))
-        with ThreadPoolExecutor(max_workers=num_workers, thread_name_prefix="model") as executor:
-            futures = {
-                executor.submit(
-                    generate_for_model, name, config, state, ref_cache, target, True
-                ): name
-                for name in models_to_run if name in config["models"]
-            }
-            for future in as_completed(futures):
-                name = futures[future]
-                try:
-                    future.result()
-                    logger.info("[%s] Worker finished", name)
-                except Exception:
-                    logger.exception("[%s] Worker FAILED", name)
-    else:
-        for name in models_to_run:
-            try:
-                generate_for_model(name, config, state, ref_cache, target, False)
-            except Exception:
-                logger.exception("FATAL for %s - continuing", name)
-            print_progress(state, config, target)
-
-    elapsed = time.time() - start_time
-    h, rem = divmod(elapsed, 3600)
-    m, s = divmod(rem, 60)
-
-    logger.info("")
-    logger.info("=" * 70)
-    logger.info("ALL DONE | Time: %dh %dm %ds", h, m, s)
-    logger.info("=" * 70)
-    print_progress(state, config, target)
+    _run_bulk(
+        generate_for_model, models_to_run, config, state, RefCache(),
+        args.min_carousels, "carousel", args.parallel, args.workers,
+    )
 
 
 if __name__ == "__main__":

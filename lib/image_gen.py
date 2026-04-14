@@ -80,7 +80,7 @@ def get_reference_image_urls(
 # Carousel image generation (sequential or parallel)
 # ---------------------------------------------------------------------------
 
-def _generate_single_image(
+def generate_single_image(
     prompt_idx: int,
     prompt: str,
     ref_image_urls: list[str],
@@ -130,7 +130,7 @@ def generate_carousel_images(
         results: list[dict | None] = [None] * len(prompts)
         with ThreadPoolExecutor(max_workers=len(prompts), thread_name_prefix=f"img-{model_name}") as ex:
             futures = {
-                ex.submit(_generate_single_image, i, p, ref_image_urls, aspect_ratio, model_name): i
+                ex.submit(generate_single_image, i, p, ref_image_urls, aspect_ratio, model_name): i
                 for i, p in enumerate(prompts)
             }
             for future in as_completed(futures):
@@ -140,7 +140,7 @@ def generate_carousel_images(
     else:
         results_seq = []
         for i, prompt in enumerate(prompts):
-            _, result = _generate_single_image(i, prompt, ref_image_urls, aspect_ratio, model_name)
+            _, result = generate_single_image(i, prompt, ref_image_urls, aspect_ratio, model_name)
             results_seq.append(result)
         return results_seq
 

@@ -32,8 +32,14 @@ def setup_logging(verbose: bool = False, parallel: bool = False):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
-def retry(max_attempts=3, delay=2, backoff=2):
-    """Decorator that retries a function on exception with exponential backoff."""
+_UNSET = object()
+
+
+def retry(max_attempts=3, delay=2, backoff=2, default=_UNSET):
+    """Decorator that retries a function on exception with exponential backoff.
+
+    If *default* is provided, return it on final failure instead of re-raising.
+    """
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
@@ -42,6 +48,8 @@ def retry(max_attempts=3, delay=2, backoff=2):
                     return fn(*args, **kwargs)
                 except Exception:
                     if attempt == max_attempts:
+                        if default is not _UNSET:
+                            return default
                         raise
                     wait = delay * backoff ** (attempt - 1)
                     logger.warning("%s failed (attempt %d/%d), retrying in %ds...",
@@ -51,34 +59,22 @@ def retry(max_attempts=3, delay=2, backoff=2):
     return decorator
 
 
+@retry(delay=3, backoff=1, default=None)
 def download_image_as_base64(url: str) -> str | None:
     """Download an image URL and return as a base64 data URI."""
-    for attempt in range(3):
-        try:
-            resp = requests.get(url, timeout=30)
-            resp.raise_for_status()
-            content_type = resp.headers.get("Content-Type", "image/jpeg")
-            if ";" in content_type:
-                content_type = content_type.split(";")[0].strip()
-            b64 = base64.b64encode(resp.content).decode("utf-8")
-            return f"data:{content_type};base64,{b64}"
-        except Exception as e:
-            logger.warning("Image download failed (attempt %d/3): %s", attempt + 1, e)
-            if attempt < 2:
-                time.sleep(3)
-    return None
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    content_type = resp.headers.get("Content-Type", "image/jpeg")
+    if ";" in content_type:
+        content_type = content_type.split(";")[0].strip()
+    b64 = base64.b64encode(resp.content).decode("utf-8")
+    return f"data:{content_type};base64,{b64}"
 
 
+@retry(delay=3, backoff=1, default=False)
 def download_file(url: str, dest: Path, timeout: int = 60) -> bool:
     """Download a URL to a local file path. Returns True on success."""
-    for attempt in range(3):
-        try:
-            resp = requests.get(url, timeout=timeout)
-            resp.raise_for_status()
-            dest.write_bytes(resp.content)
-            return True
-        except Exception as e:
-            logger.warning("Download failed (attempt %d/3): %s", attempt + 1, e)
-            if attempt < 2:
-                time.sleep(3)
-    return False
+    resp = requests.get(url, timeout=timeout)
+    resp.raise_for_status()
+    dest.write_bytes(resp.content)
+    return True
