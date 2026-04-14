@@ -68,7 +68,6 @@ coverage.xml
 .mypy_cache/
 
 # Logs
-logs/
 *.log
 
 # Images
@@ -103,10 +102,8 @@ output/
 output2/
 tmp/
 
-# Runtime / generated data
-bulk_generation_state.json
-ref_urls_cache.json
-posts_cache/
+# Runtime / generated data (all under tmp/)
+tmp/
 
 # Allow example assets for README
 !docs/

@@ -9,7 +9,7 @@ import requests
 
 logger = logging.getLogger("bloggers_factory")
 
-POSTS_CACHE_DIR = Path("posts_cache")
+POSTS_CACHE_DIR = Path("tmp/posts_cache")
 
 _API_URL = "https://instagram120.p.rapidapi.com/api/instagram/reels"
 

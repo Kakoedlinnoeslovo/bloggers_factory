@@ -8,8 +8,8 @@ from pathlib import Path
 
 import requests
 
-LOG_DIR = Path("logs")
-LOG_DIR.mkdir(exist_ok=True)
+LOG_DIR = Path("tmp/logs")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger("bloggers_factory")
 

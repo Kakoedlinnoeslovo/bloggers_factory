@@ -2,8 +2,11 @@ import json
 import threading
 from pathlib import Path
 
-STATE_FILE = Path("bulk_generation_state.json")
-REF_CACHE_FILE = Path("ref_urls_cache.json")
+TMP_DIR = Path("tmp")
+TMP_DIR.mkdir(exist_ok=True)
+
+STATE_FILE = TMP_DIR / "bulk_generation_state.json"
+REF_CACHE_FILE = TMP_DIR / "ref_urls_cache.json"
 
 _state_lock = threading.Lock()
 _ref_cache_lock = threading.Lock()
