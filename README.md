@@ -216,27 +216,6 @@ Each run scrapes a real blogger reel, analyzes it with GPT-4o and Gemini, and ge
 > A sophisticated female model standing gracefully beside a serene body of water under a clear sky. She is seen from behind, looking out over the calm expanse. The camera slowly and smoothly transitions into a gentle pull-back, revealing more of the water and distant cityscape, while she maintains her elegant, contemplative pose. Her white feathered dress gently sways with an imperceptible soft breeze, her posture remaining poised and still as the camera gradually widens its view, capturing the expansive, tranquil outdoor scene with fluid motion.
 </details>
 
----
-
-### Example 3: nola (source: @dianerrashid)
-
-**Source reel frame** &#8594; **AI-generated image (Nano Banana 2)**
-
-<p>
-<img src="docs/examples/nola/source_frame.png" width="280" alt="Source frame from @dianerrashid reel">
-<img src="docs/examples/nola/generated_image.png" width="280" alt="AI-generated image for nola">
-</p>
-
-
-<details>
-<summary>Generated prompts</summary>
-
-**Scene prompt** (GPT-4o):
-> This phone camera screenshot captures a cozy, elegant room with a warm, inviting atmosphere. The setting features rich, dark wood paneling and deep red carpeting that matches the plush armchairs. In the center, a table adorned with a vibrant bouquet of red and orange flowers adds a lively touch. Display cases with gold frames showcase various objects, contributing to the room's sophisticated feel. The lighting is soft and ambient, casting gentle shadows across the room.
-
-**Kling prompt** (Gemini):
-> A continuous motion sequence featuring luxurious Hermes items. The camera slowly glides from a wide shot of an elegant boutique interior, showcasing a watch display and plush seating, gently transitioning to a medium shot tracking a person's legs and torso as they smoothly walk on a cobblestone street, carrying a distinctive orange Hermes shopping bag and sleek black handbag. The camera then seamlessly transitions to an overhead close-up, focusing on hands deftly and gradually unboxing a new, pristine cream-colored Hermes purse, revealing its exquisite details with continuous, fluid movements.
-</details>
 
 ## Project Structure
 

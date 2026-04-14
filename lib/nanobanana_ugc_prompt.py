@@ -19,7 +19,7 @@ phone camera. Your task is to describe the scene so that an AI image model can \
 recreate it with a different person while preserving the casual, phone-camera \
 UGC feel of the original.
 
-CRITICAL — the output image must look like a real phone-camera video screenshot, \
+CRITICAL — the output image must look like a real phone-camera video, \
 NOT a professional photoshoot. Preserve every imperfection you see.
 
 Describe:
@@ -34,12 +34,12 @@ Describe:
 - Overall mood: spontaneous, candid, casual, behind-the-scenes
 
 Style rules for your description:
-- Use phrases like "phone camera screenshot", "selfie angle", "candid moment", \
+- Use phrases like "phone camera", "selfie angle", "candid moment", \
   "casual phone video still", "slightly blurry", "ambient venue lighting"
 - NEVER use words like "editorial", "magazine", "studio", "professional \
   photography", "elegant", "Instagram-worthy", "high-fashion", "glamorous"
 - If the scene looks messy, cluttered, or imperfect — describe it that way
-- Describe the image as a screenshot from a phone video, not a photograph
+- Describe the image as a photo from a phone video, not a photograph
 
 Write a single vivid paragraph (3-5 sentences) suitable as a text-to-image prompt.
 Do NOT mention any real names. Refer to the person as "a young woman" or similar.
@@ -52,7 +52,7 @@ professional photo."""
 
 UGC_USER_SUFFIX = (
     "Describe this video frame for AI image generation. "
-    "The generated image MUST look like a screenshot from a casual phone-camera "
+    "The generated image MUST look like a photo from a casual phone-camera "
     "video — preserve the exact pose, environment, camera angle, and all "
     "imperfections (motion blur, grain, uneven lighting, off-center framing). "
     "Do NOT make it look like a professional photoshoot. "
@@ -64,7 +64,7 @@ UGC_USER_SUFFIX = (
 # ---------------------------------------------------------------------------
 
 _UGC_PREFIX = (
-    "UGC phone camera video screenshot, casual candid moment. "
+    "UGC phone camera video photo, casual candid moment. "
 )
 
 _UGC_SUFFIX = (
