@@ -108,6 +108,10 @@ bulk_generation_state.json
 ref_urls_cache.json
 posts_cache/
 
+# Allow example assets for README
+!docs/
+!docs/**
+
 # OS files
 .DS_Store
 Thumbs.db
