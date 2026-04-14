@@ -166,6 +166,42 @@ python generate.py --reset
 | `--duration N` | Kling video duration in seconds (default: 5) |
 | `--vision-model MODEL` | Vision model for motion analysis (default: `google/gemini-2.5-flash`) |
 
+## Real Examples
+
+### Reel-to-video pipeline
+
+Each run scrapes a real blogger reel, analyzes it with GPT-4o and Gemini, and generates a new AI video. Here are three real outputs from the pipeline:
+
+#### Example 1: Andrea (blogger: @beccaxbloom)
+
+| | |
+|---|---|
+| **Source reel** | [instagram.com/reel/DXAAgNkBWgZ](https://www.instagram.com/reel/DXAAgNkBWgZ/) |
+| **AI model** | Andrea |
+| **Scene prompt** (GPT-4o) | A young woman is captured in a casual phone camera screenshot, sitting on a vintage-style bed with intricate carvings. She holds a large, light green box labeled with faint lettering, using both hands to present it excitedly. Her expression is animated with wide eyes and a slight smile. She wears a light yellow sleeveless knit over a white shirt, adorned with several rings, bracelets, and earrings that catch the light. The setting is cozy, with a painting of flowers on the wall and ambient natural lighting creating soft shadows. |
+| **Kling prompt** (Gemini) | A young Asian woman, with a clean bun and elegant makeup, wearing a light yellow cable-knit vest over a white t-shirt, gently and smoothly lowers a large light green box onto her lap, smiling warmly at the camera. She then gradually brings her hands up, delicately holding and displaying an intricate gold necklace with multiple charms, including a white floral one, moving it closer to the camera to highlight its details. Her fingers gracefully manipulate the jewelry. She slowly and fluidly lowers the necklace, which is now elegantly draped around her neck, as she returns her gaze to the camera with a soft, content smile, her movements flowing effortlessly from one pose to the next with subtle weight shifts. |
+| **Output** | `output/Andrea/reel_2026-04-14_683810/DXAAgNkBWgZ.mp4` |
+
+#### Example 2: amara (blogger: @imaanhammam)
+
+| | |
+|---|---|
+| **Source reel** | [instagram.com/reel/DVWUVvADlfZ](https://www.instagram.com/reel/DVWUVvADlfZ/) |
+| **AI model** | amara |
+| **Scene prompt** (GPT-4o) | A casual phone video still captures a young woman standing on a rough stone platform by the water's edge. She is seen from behind, wearing a sleek, pale dress adorned with feather-like details at the hem, which sway gently in the breeze. Her posture is relaxed, arms resting naturally by her sides as she gazes towards the calm sea. The background reveals a distant shoreline with buildings, slightly blurred, suggesting a sunny day with bright, natural lighting. |
+| **Kling prompt** (Gemini) | A sophisticated female model standing gracefully beside a serene body of water under a clear sky. She is seen from behind, looking out over the calm expanse. The camera slowly and smoothly transitions into a gentle pull-back, revealing more of the water and distant cityscape, while she maintains her elegant, contemplative pose. Her white feathered dress gently sways with an imperceptible soft breeze, her posture remaining poised and still as the camera gradually widens its view, capturing the expansive, tranquil outdoor scene with fluid motion. |
+| **Output** | `output2/amara/reel_2026-04-13_611477/DVWUVvADlfZ.mp4` |
+
+#### Example 3: nola (blogger: @dianerrashid)
+
+| | |
+|---|---|
+| **Source reel** | [instagram.com/reel/DVi6KE1DTNp](https://www.instagram.com/reel/DVi6KE1DTNp/) |
+| **AI model** | nola |
+| **Scene prompt** (GPT-4o) | This phone camera screenshot captures a cozy, elegant room with a warm, inviting atmosphere. The setting features rich, dark wood paneling and deep red carpeting that matches the plush armchairs. In the center, a table adorned with a vibrant bouquet of red and orange flowers adds a lively touch. Display cases with gold frames showcase various objects, contributing to the room's sophisticated feel. The lighting is soft and ambient, casting gentle shadows across the room. |
+| **Kling prompt** (Gemini) | A continuous motion sequence featuring luxurious Hermes items. The camera slowly glides from a wide shot of an elegant boutique interior, showcasing a watch display and plush seating, gently transitioning to a medium shot tracking a person's legs and torso as they smoothly walk on a cobblestone street, carrying a distinctive orange Hermes shopping bag and sleek black handbag. The camera then seamlessly transitions to an overhead close-up, focusing on hands deftly and gradually unboxing a new, pristine cream-colored Hermes purse, revealing its exquisite details with continuous, fluid movements. |
+| **Output** | `output2/nola/reel_2026-04-13_461579/DVi6KE1DTNp.mp4` |
+
 ## Project Structure
 
 ```
